@@ -10,7 +10,7 @@ Using Composer;
 
 ```sh
 composer config repositories.regenurl vcs git@github.com:workhouse-advertising/magento2-regenurl.git
-composer require iazel/module-regen-product-url
+composer require iazel/module-regen-product-url:dev-master
 php bin/magento setup:upgrade
 ```
 
