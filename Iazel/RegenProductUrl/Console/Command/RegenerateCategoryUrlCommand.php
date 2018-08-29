@@ -125,6 +125,13 @@ class RegenerateCategoryUrlCommand extends Command
             ]);
 
             $newUrls = $this->categoryUrlRewriteGenerator->generate($category);
+            // Make sure that the request paths are valid as Magento may generate ones that are empty. This will cause the home page to be rewritten incorrectly.
+            foreach ($newUrls as $urlKey => $newUrl) {
+                if (!trim($newUrl->getRequestPath())) {
+                    $out->writeln("<error>URL with the key '{$urlKey}' has an invalid request path of '{$newUrl->getRequestPath()}' so this rewrite is being skipped.</error>");
+                    unset($newUrls[$urlKey]);
+                }
+            }
             try {
                 $this->urlPersist->replace($newUrls);
                 $regenerated += count($newUrls);
