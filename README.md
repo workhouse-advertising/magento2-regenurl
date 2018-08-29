@@ -9,7 +9,7 @@ This extension adds console commands to be able to regenerate;
 Using Composer;
 
 ```sh
-composer config repositories.regenurl vcs git@github.com:peterjaap/magento2-regenurl.git
+composer config repositories.regenurl vcs git@github.com:workhouse-advertising/magento2-regenurl.git
 composer require iazel/module-regen-product-url
 php bin/magento setup:upgrade
 ```
