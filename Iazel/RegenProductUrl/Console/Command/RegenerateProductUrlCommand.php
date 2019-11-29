@@ -118,6 +118,7 @@ class RegenerateProductUrlCommand extends Command
                 echo 'Regenerating urls for ' . $product->getSku() . ' (' . $product->getId() . ') in store ' . $store->getName() . PHP_EOL;
                 $product->setStoreId($store_id);
 
+                // TODO: The delete and insert needs to be wrapped in a transaction.
                 $this->urlPersist->deleteByData([
                     UrlRewrite::ENTITY_ID => $product->getId(),
                     UrlRewrite::ENTITY_TYPE => ProductUrlRewriteGenerator::ENTITY_TYPE,
@@ -133,11 +134,21 @@ class RegenerateProductUrlCommand extends Command
                         unset($newUrls[$urlKey]);
                     }
                 }
-                try {
-                    $this->urlPersist->replace($newUrls);
-                    $regenerated += count($newUrls);
-                } catch (\Exception $e) {
-                    $out->writeln(sprintf('<error>Duplicated url for store ID %d, product %d (%s) - %s Generated URLs:' . PHP_EOL . '%s</error>' . PHP_EOL, $store_id, $product->getId(), $product->getSku(), $e->getMessage(), implode(PHP_EOL, array_keys($newUrls))));
+                // A work-around to process each item in the batch individually.
+                // NOTE: The ProductUrlRewriteGenerator doesn't check if URLs will conflict and `$this->urlPersist->replace(...)` doesn't actually
+                //       do a `REPLACE` but does an `INSERT` instead. The URL conflicts cause batch inserts to fail, which in turn means that _all_ of the
+                //       rewrites for the current category will have been deleted.
+                // TODO: Report a bug regarding issues with ProductUrlRewriteGenerator and propose better solutions to handling URL rewrites.
+                foreach ($newUrls as $newUrlKey => $newUrl) {
+                    $urlBatch = [
+                        $newUrlKey => $newUrl,
+                    ];
+                    try {
+                        $this->urlPersist->replace($urlBatch);
+                        $regenerated += count($urlBatch);
+                    } catch (\Exception $e) {
+                        $out->writeln(sprintf('<error>Duplicated url for store ID %d, product %d (%s) - %s Generated URLs:' . PHP_EOL . '%s</error>' . PHP_EOL, $store_id, $product->getId(), $product->getSku(), $e->getMessage(), implode(PHP_EOL, array_keys($urlBatch))));
+                    }
                 }
             }
             $out->writeln('Done regenerating. Regenerated ' . $regenerated . ' urls for store ' . $store->getName());

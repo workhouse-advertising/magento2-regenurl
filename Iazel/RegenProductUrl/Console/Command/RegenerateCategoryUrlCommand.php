@@ -117,6 +117,7 @@ class RegenerateCategoryUrlCommand extends Command
         {
             $out->writeln('Regenerating urls for ' . $category->getName() . ' (' . $category->getId() . ')');
 
+            // TODO: The delete and insert needs to be wrapped in a transaction.
             $this->urlPersist->deleteByData([
                 UrlRewrite::ENTITY_ID => $category->getId(),
                 UrlRewrite::ENTITY_TYPE => CategoryUrlRewriteGenerator::ENTITY_TYPE,
@@ -132,12 +133,22 @@ class RegenerateCategoryUrlCommand extends Command
                     unset($newUrls[$urlKey]);
                 }
             }
-            try {
-                $this->urlPersist->replace($newUrls);
-                $regenerated += count($newUrls);
-            }
-            catch(\Exception $e) {
-                $out->writeln(sprintf('<error>Duplicated url for store ID %d, category %d (%s) - %s Generated URLs:' . PHP_EOL . '%s</error>' . PHP_EOL, $store_id, $category->getId(), $category->getName(), $e->getMessage(), implode(PHP_EOL, array_keys($newUrls))));
+            // A work-around to process each item in the batch individually.
+            // NOTE: The CategoryUrlRewriteGenerator doesn't check if URLs will conflict and `$this->urlPersist->replace(...)` doesn't actually
+            //       do a `REPLACE` but does an `INSERT` instead. The URL conflicts cause batch inserts to fail, which in turn means that _all_ of the
+            //       rewrites for the current category will have been deleted.
+            // TODO: Report a bug regarding issues with CategoryUrlRewriteGenerator and propose better solutions to handling URL rewrites.
+            foreach ($newUrls as $newUrlKey => $newUrl) {
+                $urlBatch = [
+                    $newUrlKey => $newUrl,
+                ];
+                try {
+                    $this->urlPersist->replace($urlBatch);
+                    $regenerated += count($urlBatch);
+                }
+                catch(\Exception $e) {
+                    $out->writeln(sprintf('<error>Duplicated url for store ID %d, category %d (%s) - %s Generated URLs:' . PHP_EOL . '%s</error>' . PHP_EOL, $store_id, $category->getId(), $category->getName(), $e->getMessage(), implode(PHP_EOL, array_keys($urlBatch))));
+                }
             }
         }
         $this->emulation->stopEnvironmentEmulation();
