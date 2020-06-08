@@ -59,7 +59,7 @@ class RegenerateCategoryUrlCommand extends Command
         State $state,
         Collection $collection,
         CategoryUrlRewriteGenerator $categoryUrlRewriteGenerator,
-        UrlPersistInterface $urlPersist,
+        \Iazel\RegenProductUrl\Model\DbStorage $urlPersist,
         CategoryCollectionFactory $categoryCollectionFactory,
         Emulation $emulation
     ) {
@@ -113,17 +113,21 @@ class RegenerateCategoryUrlCommand extends Command
         }
 
         $regenerated = 0;
+        $currentLine = 0;
+        $totalCount = $categories->count();
+        echo "Regenerating URLs for {$totalCount} categories..." . PHP_EOL;
         foreach($categories as $category)
         {
-            $out->writeln('Regenerating urls for ' . $category->getName() . ' (' . $category->getId() . ')');
+            $currentLine++;
+            $out->writeln("({$currentLine}/{$totalCount}) Regenerating urls for {$category->getName()} ({$category->getId()}). {$regenerated} URLs regenerated so far.");
 
             // TODO: The delete and insert needs to be wrapped in a transaction.
-            $this->urlPersist->deleteByData([
-                UrlRewrite::ENTITY_ID => $category->getId(),
-                UrlRewrite::ENTITY_TYPE => CategoryUrlRewriteGenerator::ENTITY_TYPE,
-                UrlRewrite::REDIRECT_TYPE => 0,
-                UrlRewrite::STORE_ID => $store_id
-            ]);
+            // $this->urlPersist->deleteByData([
+            //     UrlRewrite::ENTITY_ID => $category->getId(),
+            //     UrlRewrite::ENTITY_TYPE => CategoryUrlRewriteGenerator::ENTITY_TYPE,
+            //     UrlRewrite::REDIRECT_TYPE => 0,
+            //     UrlRewrite::STORE_ID => $store_id
+            // ]);
 
             $newUrls = $this->categoryUrlRewriteGenerator->generate($category);
             // Make sure that the request paths are valid as Magento may generate ones that are empty. This will cause the home page to be rewritten incorrectly.
@@ -133,23 +137,30 @@ class RegenerateCategoryUrlCommand extends Command
                     unset($newUrls[$urlKey]);
                 }
             }
-            // A work-around to process each item in the batch individually.
             // NOTE: The CategoryUrlRewriteGenerator doesn't check if URLs will conflict and `$this->urlPersist->replace(...)` doesn't actually
             //       do a `REPLACE` but does an `INSERT` instead. The URL conflicts cause batch inserts to fail, which in turn means that _all_ of the
             //       rewrites for the current category will have been deleted.
             // TODO: Report a bug regarding issues with CategoryUrlRewriteGenerator and propose better solutions to handling URL rewrites.
-            foreach ($newUrls as $newUrlKey => $newUrl) {
-                $urlBatch = [
-                    $newUrlKey => $newUrl,
-                ];
-                try {
-                    $this->urlPersist->replace($urlBatch);
-                    $regenerated += count($urlBatch);
-                }
-                catch(\Exception $e) {
-                    $out->writeln(sprintf('<error>Duplicated url for store ID %d, category %d (%s) - %s Generated URLs:' . PHP_EOL . '%s</error>' . PHP_EOL, $store_id, $category->getId(), $category->getName(), $e->getMessage(), implode(PHP_EOL, array_keys($urlBatch))));
-                }
+            try {
+                // NOTE: Replaced the old $this->urlPersist with a better implementation.
+                $this->urlPersist->replace($newUrls);
+                $regenerated += count($newUrls);
             }
+            catch(\Magento\Framework\Exception\AlreadyExistsException $e) {
+                $out->writeln(sprintf('<error>Duplicated url for store ID %d, category %d (%s) - %s Generated URLs:' . PHP_EOL . '%s</error>' . PHP_EOL, $store_id, $category->getId(), $category->getName(), $e->getMessage(), implode(PHP_EOL, array_keys($newUrls))));
+            }
+            // foreach ($newUrls as $newUrlKey => $newUrl) {
+            //     $urlBatch = [
+            //         $newUrlKey => $newUrl,
+            //     ];
+            //     try {
+            //         $this->urlPersist->replace($urlBatch);
+            //         $regenerated += count($urlBatch);
+            //     }
+            //     catch(\Exception $e) {
+            //         $out->writeln(sprintf('<error>Duplicated url for store ID %d, category %d (%s) - %s Generated URLs:' . PHP_EOL . '%s</error>' . PHP_EOL, $store_id, $category->getId(), $category->getName(), $e->getMessage(), implode(PHP_EOL, array_keys($urlBatch))));
+            //     }
+            // }
         }
         $this->emulation->stopEnvironmentEmulation();
         $out->writeln('Done regenerating. Regenerated ' . $regenerated . ' urls');
