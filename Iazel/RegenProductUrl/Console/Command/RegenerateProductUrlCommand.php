@@ -75,20 +75,33 @@ class RegenerateProductUrlCommand extends Command
             ->addArgument(
                 'pids',
                 InputArgument::IS_ARRAY,
-                'Products to regenerate'
+                'Products to regenerate.'
             )
             ->addOption(
-                'skus', 'k',
+                'skus',
+                null,
                 InputOption::VALUE_REQUIRED,
-                'A comma separated list of SKUs to filter by'
+                'A comma separated list of SKUs to filter by.'
             )
             ->addOption(
-                'store', 's',
+                'skip',
+                null,
                 InputOption::VALUE_REQUIRED,
-                'Use the specific Store View',
+                'How many rows to skip.'
+            )
+            ->addOption(
+                'all',
+                null,
+                InputOption::VALUE_NONE,
+                "Whether or not to include products that aren't visible."
+            )
+            ->addOption(
+                'store',
+                's',
+                InputOption::VALUE_REQUIRED,
+                'Use the specific Store View.',
                 Store::DEFAULT_STORE_ID
-            )
-            ;
+            );
         return parent::configure();
     }
 
@@ -121,7 +134,12 @@ class RegenerateProductUrlCommand extends Command
             $this->collection->addFieldToFilter('sku', ['in' => $skus]);
         }
 
-        $this->collection->setVisibility([Visibility::VISIBILITY_IN_SEARCH, Visibility::VISIBILITY_IN_CATALOG, Visibility::VISIBILITY_BOTH]);
+        $all = (boolean) $inp->getOption('all');
+        if (!$all) {
+            $this->collection->setVisibility([Visibility::VISIBILITY_IN_SEARCH, Visibility::VISIBILITY_IN_CATALOG, Visibility::VISIBILITY_BOTH]);
+        }
+
+        $skip = (int) $inp->getOption('skip');
 
         $this->collection->addAttributeToSelect(['url_path', 'url_key']);
         $list = $this->collection->load();
@@ -131,7 +149,8 @@ class RegenerateProductUrlCommand extends Command
         $currentLine = 0;
         foreach ($list as $product) {
             $currentLine++;
-            echo "({$currentLine}/{$totalCount}) Regenerating URLs for product with the SKU {$product->getSku()} (ID: {$product->getId()})." . PHP_EOL;
+            if ($skip && $currentLine < $skip) continue;
+            echo "({$currentLine}/{$totalCount}) Regenerating URLs for product with the SKU {$product->getSku()} (ID: {$product->getId()}). {$regenerated} URLs regenerated so far." . PHP_EOL;
             $product->setStoreId($store_id);
 
             // TODO: Consider having an option to clear old URL rewrites, although this is of limited value as that's easily done 
